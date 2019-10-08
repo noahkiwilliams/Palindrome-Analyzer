@@ -1,0 +1,111 @@
+.org 0x10000000
+
+# Initializations
+li $sp, 0x10fffffc
+li $s0, 0xf0000000	# UART command register (address)
+li $s2, 0b10	# UART status register (ready bit mask)
+li $s5, array_ptr 	# array pointer base address
+
+j main
+nop
+
+array_ptr:			# Label pointing to 100 word array
+	.space 100
+
+main:
+	lw $s1, 4($s0) 	# UART status register (value)
+	and $s3, $s1, $s2	# check status register ready bit
+	beq $s3, $0, main
+	nop
+	lw $s4, 8($s0)	# retrieve receive buffer value
+	jal check_value
+	nop
+	jal store
+	nop
+	j main
+	nop
+
+check_value:
+	li $t0, 32 	# check for space character
+	beq $t0, $s4, update_status
+	nop
+	addiu, $t0, $t0, 14	# check for period (d46)
+	beq $t0, $s4, store_period
+	nop
+	addiu $t0, $t0, 18	# set $t1 to "@" (character immediately before all capital letters)
+	addiu $t1, $t0, 27 	# set $t2 to "[" (character immediately after all capital letters)
+	
+	slt $t2, $s4, $t1	# check that $t0 < $s4 < $t1 (capital letter?) 
+	slt $t3, $t0, $s4	# --------------------------------------------
+
+	slt $t4, $t0, $s4	# is $s4 < d65?
+	
+	beq $t4, $0, update_status	# skip $s4 if less than d65
+	nop
+
+	beq $t2, $t3, clean_value
+	nop
+
+	jr $ra 		# if value is lowercase letter? pass-through
+	nop
+
+clean_value:
+	addiu $s4, $s4, 32 	# convert uppercase --> lowercase
+	jr $ra
+	nop
+
+update_status:
+	sw $s2, 0($s0)
+	j main
+	nop
+
+store:
+	sw $s4, 0($s5)	# store cleaned value in array
+	addiu, $s5, $s5, 4	# increment array pointer to next address
+	push $s4		# push value onto stack
+	
+	j update_status
+	nop
+
+analyze:
+	li $v1, 46
+	lw $a1, 0($s5)
+	beq $a1, $v1, palindrome
+	nop
+	pop $t2		
+	bne $a1, $t2, no_palindrome
+	nop
+	beq $a1, $t2, analyze
+	addiu $s5, $s5, 4
+
+no_palindrome:
+	li $a0, 0
+	call project3_print # deprecated file (need to replace)
+	jal reset
+	nop
+	j update_status
+	nop
+
+store_period:
+	sw $s4, 0($s5)	# store cleaned value in array
+	addiu, $s5, $s5, 4	# increment array pointer to next address
+	push $s4		# push value onto stack
+
+	li $s5, array_ptr
+	addiu $sp, $sp, 4
+	
+	j analyze
+	nop
+
+palindrome:
+	li $a0, 1
+	call project3_print
+	jal reset
+	nop
+	j update_status
+	nop
+
+reset:
+	li $s5, array_ptr
+	li $sp, 0x10fffffc
+	jr $ra
